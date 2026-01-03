@@ -2,6 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 
+dotenv.config();
+
 // Middleware imports
 const { authenticate, verifyOrganization } = require('./middleware/auth');
 const errorHandler = require('./middleware/errorHandler');
@@ -32,39 +34,62 @@ const marketplaceRoutes = require('./routes/marketplaceRoutes');
 const captionRoutes = require('./routes/captionRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 
-dotenv.config();
-
 const app = express();
 
-// ============================================================
-// GLOBAL MIDDLEWARE
-// ============================================================
+/* ============================================================
+   CORS CONFIG (RENDER + LOCAL)
+============================================================ */
+
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'https://frontend-v1fb.onrender.com',
+];
 
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || '*',
+  origin: (origin, callback) => {
+    // Allow server-to-server, health checks, curl, etc.
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`CORS blocked: ${origin}`), false);
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
+
+// Handle preflight requests
+app.options('*', cors());
+
+/* ============================================================
+   BODY PARSERS
+============================================================ */
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// Request logging
+/* ============================================================
+   REQUEST LOGGING
+============================================================ */
+
 app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.originalUrl}`);
   next();
 });
 
-// ============================================================
-// PUBLIC ROUTES (No authentication required)
-// ============================================================
+/* ============================================================
+   PUBLIC ROUTES
+============================================================ */
 
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
+  res.json({
+    status: 'ok',
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
   });
 });
 
@@ -72,18 +97,18 @@ app.use('/api/auth', authRoutes);
 app.use('/api/version', versionRoutes);
 app.use('/api/marketplace', marketplaceRoutes);
 app.use('/api/captions', captionRoutes);
-app.use('/api/bible', bibleRoutes); // Bible API - public access
+app.use('/api/bible', bibleRoutes);
 
-// ============================================================
-// PROTECTED ROUTES (Authentication required)
-// ============================================================
+/* ============================================================
+   PROTECTED ROUTES (AUTH)
+============================================================ */
 
 app.use('/api/users', authenticate, userRoutes);
 app.use('/api/notifications', authenticate, notificationRoutes);
 
-// ============================================================
-// ORGANIZATION-SCOPED ROUTES (Auth + Org verification required)
-// ============================================================
+/* ============================================================
+   ORG-SCOPED ROUTES (AUTH + ORG)
+============================================================ */
 
 app.use('/api/presentations', authenticate, verifyOrganization, presentationRoutes);
 app.use('/api/playlists', authenticate, verifyOrganization, playlistRoutes);
@@ -103,21 +128,21 @@ app.use('/api/video-editor', authenticate, verifyOrganization, videoEditorRoutes
 app.use('/api/watermark', authenticate, verifyOrganization, watermarkRoutes);
 app.use('/api/devices', authenticate, verifyOrganization, deviceRoutes);
 
-// ============================================================
-// 404 HANDLER
-// ============================================================
+/* ============================================================
+   404 HANDLER
+============================================================ */
 
 app.use((req, res) => {
-  res.status(404).json({ 
+  res.status(404).json({
     error: 'Route not found',
-    path: req.path,
-    method: req.method
+    path: req.originalUrl,
+    method: req.method,
   });
 });
 
-// ============================================================
-// ERROR HANDLING (Must be last)
-// ============================================================
+/* ============================================================
+   ERROR HANDLER (LAST)
+============================================================ */
 
 app.use(errorHandler);
 
